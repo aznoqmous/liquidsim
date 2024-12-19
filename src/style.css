@@ -11,7 +11,7 @@ body {
 }
 canvas {
   width: 100vw;
-  aspect-ratio: 32/9;
+  height: 100vh;
   filter: url(#goo);
 }
 #app {
@@ -24,4 +24,8 @@ canvas {
   position: fixed;
   bottom: 1rem;
   left: 1rem;
+}
+
+svg {
+  position: absolute;
 }

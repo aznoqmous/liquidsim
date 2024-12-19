@@ -11,7 +11,24 @@ const main = async ()=>{
     await ready();
 
     const parent = document.querySelector("#app")
+    const filterValue = 20
+    parent.innerHTML += `
+        <svg>
+        <defs>
+            <filter id="goo">
+                <feGaussianBlur stdDeviation="${filterValue}" result="filter3"></feGaussianBlur>
+                <feColorMatrix mode="matrix" values="
+                1 0 0 0 0 
+                0 1 0 0 0 
+                0 0 1 0 0 
+                0 0 0 ${filterValue*2} -${filterValue}" result="filter4"></feColorMatrix>
+            </filter>
+        </defs>
+    </svg>
+    `
+
     const canvas = document.createElement("canvas")
+    canvas.style.filter = "url(#goo)"
     parent.append(canvas)
 
     const gl = canvas.getContext('webgl2')
@@ -20,17 +37,17 @@ const main = async ()=>{
 
     let radius = 1
     let config = {
-      "DISPLAY": "dye",
-      "DYE_DISSIPATION": 0.9920567176527572,
-      "DYE_RESOLUTION": 1024,
-      "NU": 0.31622776601683794,
-      "PRESSURE": "1",
-      "RADIUS": 0.01,
-      "SIM_RESOLUTION": 128,
-      "SPEED": 0.3,
-      "SPLAT_FORCE": 20,
-      "VELOCITY_DISSIPATION": 0.9521369907677362
-  }
+        "DISPLAY": "dye",
+        "DYE_DISSIPATION": 0.996018928294465,
+        "DYE_RESOLUTION": 1024,
+        "NU": 0.31622776601683794,
+        "PRESSURE": 0.7,
+        "RADIUS": 0.01,
+        "SIM_RESOLUTION": 128,
+        "SPEED": 3,
+        "SPLAT_FORCE": 20,
+        "VELOCITY_DISSIPATION": 0.996018928294465
+    }
 
     let aspect_ratio;
     let sim_width, sim_height;
@@ -229,7 +246,7 @@ out vec4 res;
 void main() {
     vec4 color = texture(u_x, v_position);
     float alpha = color.x * color.y * color.z * 2.0;
-    res = vec4(color.xyz, alpha);
+    res = vec4(color.xyz / 1.2, alpha * alpha);
 }`;
 
     const splat_fs = `#version 300 es
@@ -522,18 +539,6 @@ void main() {
         };
     }
 
-    /*
-    canvas.addEventListener('pointerdown', (e) => {
-      pointers.push(create_pointer(e));
-    });
-
-    canvas.addEventListener('pointerup', (e) => {
-      const pointer_idx = pointers.findIndex(p => p.id === e.pointerId);
-      if (pointer_idx < 0) return;
-
-      pointers.splice(pointer_idx, 1);
-    });
-    */
     let delta = 0
     let lastFrame = 0
     const deltaReq = ()=>{
@@ -551,7 +556,8 @@ void main() {
                 [236/255, 0/255, 140/255],
                 [0/255, 184/255, 241/255],
             ]
-            this.colorIndex = 0
+            this.colors = this.colors.map(color => color.map(value => value/1.5))
+            this.colorIndex = Math.random() * this.colors.length
             this.data = create_pointer({
                 offsetX: gl.canvas.width/2,
                 offsetY: gl.canvas.height/2
@@ -561,7 +567,9 @@ void main() {
             this.delta = 0
             this.mouseX = 0.5
             this.mouseY = 0.5
-
+            this.seedX = Math.sin(Math.random() * 2 * Math.PI) * 100
+            this.seedY = Math.sin(Math.random() * 2 * Math.PI) * 100
+            this.innerRadius = 0.2
             this.bind()
         }
         bind(){
@@ -584,32 +592,49 @@ void main() {
             const currentColor = this.colors[index % this.colors.length]
             const nextColor = this.colors[(index + 1) % this.colors.length]
             const ratio = this.colorIndex % 1
-            return [
-                lerp(currentColor[0], nextColor[0], ratio),
-                lerp(currentColor[1], nextColor[1], ratio),
-                lerp(currentColor[2], nextColor[2], ratio),
-            ]
+            return currentColor
+            // return [
+            //     lerp(currentColor[0], nextColor[0], ratio),
+            //     lerp(currentColor[1], nextColor[1], ratio),
+            //     lerp(currentColor[2], nextColor[2], ratio),
+            // ]
         }
 
         update(){
-            const speed = config.SPEED / 2
-            this.data.x = (Math.sin(this.time * speed) + 1) / 2
-            this.data.y = (Math.cos(this.time * speed * 3) + 1) / 2
-            
+
+            const startDuration = 5
+            const time = Math.min((performance.now() / 1000) / startDuration, 1)
+
+            const speed = lerp(config.SPEED / 2 * 5, config.SPEED / 2, time)
+            if(time >= 1){
+                this.innerRadius = lerp(this.innerRadius, 0.5, this.delta)
+            }
+
+            this.data.x = ((Math.sin(this.seedX + this.time * speed) * this.innerRadius + 1) / 2)
+            this.data.y = ((Math.cos(this.seedY + this.time * speed) * this.innerRadius + 1) / 2)
+
             this.mouseRatio -= this.delta / 10
             this.mouseRatio = Math.max(0, this.mouseRatio)
+            if(time < 1) this.mouseRatio = 0
 
-            this.data.x = lerp(this.data.x, this.mouseX, this.mouseRatio) 
+            this.data.x = lerp(this.data.x, this.mouseX, this.mouseRatio)
             this.data.y = lerp(this.data.y, this.mouseY, this.mouseRatio)
 
-            this.data.dx = config.PRESSURE * 0.1 * this.delta * - this.data.x
-            this.data.dy = config.PRESSURE * 0.1 * this.delta * - this.data.y
+            //this.data.dx = this.delta * this.data.x * config.PRESSURE * 0.1
+            //this.data.dy = this.delta * this.data.y * config.PRESSURE * 0.1
+        
+            let startRadius = 1 + 1 / (1 - time + 0.1)
+            if(time >= 1) startRadius = 1
+            radius = lerp(1.5, 2, this.mouseRatio)
 
+            //this.data.x = 0.5
+            //this.data.y = 0.5
+            this.data.dx = (this.data.x - 0.5) / 10000
+            this.data.dy = (this.data.y - 0.5) / 10000
 
-            radius = 10
-
-            this.colorIndex += this.delta / 2 
+            this.colorIndex += this.delta / 2
             this.data.color = this.getColor()
+            //this.data.color = [0.9,0.1,0.3]
         }
 
         live(){
@@ -663,7 +688,6 @@ void main() {
     config.RADIUS = radius_transform(1);
     config.VELOCITY_DISSIPATION = velocity_dissipation_transform(0.3);
     config.DYE_DISSIPATION = density_dissipation_transform(0.3);
-    config.SPEED = 0.3
 
 
     const gooFilter = document.getElementById("goo")
