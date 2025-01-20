@@ -17,13 +17,14 @@ canvas {
 #app {
   width: 100vw;
   aspect-ratio: 32/9;
-  border: 1px solid black;
+  /* border: 1px solid black; */
   margin: auto;
 }
 .settings {
   position: fixed;
   bottom: 1rem;
   left: 1rem;
+  opacity: 0;
 }
 
 svg {

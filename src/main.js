@@ -1,5 +1,6 @@
-import "./style.css"
+// https://github.com/loicmagne/webgl2_fluidsim/blob/main/script.js
 import { createNoise2D } from "simplex-noise"
+import "./style.css"
 "use strict"
 
 const ready = ()=> new Promise(res => {
@@ -26,7 +27,6 @@ const main = async ()=>{
         </defs>
     </svg>
     `
-
     const canvas = document.createElement("canvas")
     canvas.style.filter = "url(#goo)"
     parent.append(canvas)
@@ -245,8 +245,9 @@ out vec4 res;
 
 void main() {
     vec4 color = texture(u_x, v_position);
-    float alpha = color.x * color.y * color.z * 2.0;
-    res = vec4(color.xyz / 1.2, alpha * alpha);
+    float alpha = color.x * color.y * color.z;
+    color = normalize(color);
+    res = vec4(color.xyz, alpha);
 }`;
 
     const splat_fs = `#version 300 es
@@ -515,7 +516,8 @@ void main() {
         last_time = t;
 
         if (setup_sizes()) setup_fbos();
-        step_user();
+        step_user(pointer.data)
+        if(pointer.mouseData) step_user(pointer.mouseData)
         step_sim(dt);
         render_screen(
             config.DISPLAY == 'velocity' ? velocity.read :
@@ -549,6 +551,7 @@ void main() {
     const lerp = (a,b,t)=>{
         return a*(1-t) + b * t
     }
+
     class Pointer {
         constructor(){
             this.colors = [
@@ -565,13 +568,16 @@ void main() {
             this.noise = createNoise2D()
             this.lastFrame = 0
             this.delta = 0
+
             this.mouseX = 0.5
             this.mouseY = 0.5
+
             this.seedX = Math.sin(Math.random() * 2 * Math.PI) * 100
             this.seedY = Math.sin(Math.random() * 2 * Math.PI) * 100
             this.innerRadius = 0.2
             this.bind()
         }
+
         bind(){
             this.mouseRatio = 0
             canvas.addEventListener('pointermove', (e) => {
@@ -605,36 +611,43 @@ void main() {
             const startDuration = 5
             const time = Math.min((performance.now() / 1000) / startDuration, 1)
 
-            const speed = lerp(config.SPEED / 2 * 5, config.SPEED / 2, time)
+            const speed = lerp(config.SPEED, config.SPEED, time)
             if(time >= 1){
                 this.innerRadius = lerp(this.innerRadius, 0.5, this.delta)
             }
 
-            this.data.x = ((Math.sin(this.seedX + this.time * speed) * this.innerRadius + 1) / 2)
+            this.data.x = ((Math.sin(this.seedX + this.time * speed * 0.7) * this.innerRadius + 1) / 2)
             this.data.y = ((Math.cos(this.seedY + this.time * speed) * this.innerRadius + 1) / 2)
 
             this.mouseRatio -= this.delta / 10
             this.mouseRatio = Math.max(0, this.mouseRatio)
             if(time < 1) this.mouseRatio = 0
 
-            this.data.x = lerp(this.data.x, this.mouseX, this.mouseRatio)
-            this.data.y = lerp(this.data.y, this.mouseY, this.mouseRatio)
+            // this.data.x = lerp(this.data.x, this.mouseX, this.mouseRatio)
+            // this.data.y = lerp(this.data.y, this.mouseY, this.mouseRatio)
 
-            //this.data.dx = this.delta * this.data.x * config.PRESSURE * 0.1
-            //this.data.dy = this.delta * this.data.y * config.PRESSURE * 0.1
-        
             let startRadius = 1 + 1 / (1 - time + 0.1)
             if(time >= 1) startRadius = 1
             radius = lerp(1.5, 2, this.mouseRatio)
 
-            //this.data.x = 0.5
-            //this.data.y = 0.5
-            this.data.dx = (this.data.x - 0.5) / 10000
-            this.data.dy = (this.data.y - 0.5) / 10000
+            this.data.dx = (this.data.x - 0.5) / 1000
+            this.data.dy = (this.data.y - 0.5) / 1000
 
-            this.colorIndex += this.delta / 2
+            this.colorIndex += this.delta * speed
             this.data.color = this.getColor()
-            //this.data.color = [0.9,0.1,0.3]
+
+            this.mouseData = {
+                x: this.mouseX,
+                y: this.mouseY,
+                dx: (this.mouseX - 0.5) / 10000,
+                dy: (this.mouseY - 0.5) / 10000,
+                color: this.data.color
+            }
+
+            config.DYE_DISSIPATION = (Math.sin(this.time / 2 * 2 * Math.PI) + 1) / 2 / 200 + 0.99
+            config.DYE_DISSIPATION = lerp(config.DYE_DISSIPATION, 0.999, this.mouseRatio / 2)
+
+
         }
 
         live(){
@@ -653,8 +666,10 @@ void main() {
     const pointer = new Pointer(currentPointer)
     pointer.live()
 
-    function step_user() {
-        let p = pointer.data
+    step_user(pointer.data)
+    if(pointer.mouseData) step_user(pointer.mouseData)
+
+    function step_user(p) {
         if(!p) return;
         gl.useProgram(splat_program.program);
         gl.uniform1i(splat_program.uniforms.u_x, velocity.read.bind_tex(0));
@@ -686,9 +701,8 @@ void main() {
     config.NU = viscosity_transform(0.5);
     config.PRESSURE = 0.7;
     config.RADIUS = radius_transform(1);
-    config.VELOCITY_DISSIPATION = velocity_dissipation_transform(0.3);
-    config.DYE_DISSIPATION = density_dissipation_transform(0.3);
-
+    config.VELOCITY_DISSIPATION = velocity_dissipation_transform(0.1);
+    config.DYE_DISSIPATION = density_dissipation_transform(0.1);
 
     const gooFilter = document.getElementById("goo")
     const gooGaussianBlur = gooFilter.querySelector('feGaussianBlur')
